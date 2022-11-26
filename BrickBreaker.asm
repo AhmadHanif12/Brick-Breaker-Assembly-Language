@@ -6,7 +6,8 @@ dosseg
 playerName db 0
 .code
 main proc
-
+mov ax, @data
+mov ds, ax
 
 main endp
 welcomePage proc
