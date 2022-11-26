@@ -8,7 +8,10 @@ playerName db 0
 main proc
 mov ax, @data
 mov ds, ax
-main endp
 
+main endp
+welcomePage proc
+
+welcomePage end
 end main
 
