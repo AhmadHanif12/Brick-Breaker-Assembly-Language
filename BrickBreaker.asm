@@ -12,6 +12,6 @@ mov ds, ax
 main endp
 welcomePage proc
 
-welcomePage end
+welcomePage endp
 end main
 
