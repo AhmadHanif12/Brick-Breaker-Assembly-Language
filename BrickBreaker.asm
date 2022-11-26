@@ -7,7 +7,10 @@ playerName db 0
 .code
 main proc
 
-main endp
 
+main endp
+welcomePage proc
+
+welcomePage end
 end main
 
