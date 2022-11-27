@@ -2,6 +2,7 @@ dosseg
 
 .model small
 .stack 100h
+.286
 .data
 gameName db "Enter your Name: $"
 num db 30
