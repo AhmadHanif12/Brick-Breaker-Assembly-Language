@@ -763,6 +763,6 @@ int 10h
 ret
 BrickBreakerPrint endp
 
-welcomePage endp
+
 end main
 
