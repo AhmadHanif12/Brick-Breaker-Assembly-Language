@@ -751,6 +751,7 @@ mov dh,11  ;down
 mov dl,69  ;left
 int 10h
 
+
 mov ah,6
 mov al,0
 mov BH,colour
@@ -761,5 +762,7 @@ mov dl,69  ;left
 int 10h
 ret
 BrickBreakerPrint endp
+
+welcomePage endp
 end main
 
