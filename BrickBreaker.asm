@@ -67,7 +67,6 @@ lowerx dw 0
 lowery dw 0
 ;============Collision=================
 
-score dw 0
 ;----------------For timer------------------
 second dw 0
 syssecond db 0
@@ -139,7 +138,26 @@ exitbox dw 415,395,460,413
 ;----------------Indexes of Menu buttons-----------------------
 count db 0 ; keeps count of number of digits to be printed, used in output func,
 ;------------Mouse control--------
-playerName db 0
+
+;----------------Display leaderboaard-----------
+isName db 0
+dLBcursorR db 0
+dLBcursorC db 0
+
+
+;----------------For score-----------
+score dw 0
+;----------------For file handling---------------------------
+fileopened dw 0
+file_name db 'score.txt&'
+scoreHandler dw 0 ;file handler for score.txt
+chTraversal db 0 
+chTraversalcount dw 0 ;first is for traversal character, second is for traversal count
+ubltemp dw 0
+userSize dw 0 ;Size of username
+playerName db 0 ;this variable must be at last
+;------------------------------------------------------
+
 
 .code
 ;-----------------------------------------------------
@@ -1153,6 +1171,29 @@ call ExitPage
 startgameselected:
 call startgamepage
 
+returnmainmenu:
+call mainMenuprint
+
+displayScoreBoard:
+call displayLeaderBoard 
+
+push ax
+checkingreturn:
+mov ah,01     ;checking if any key pressed
+int 16h
+Jz nokeypressed3
+mov ah,0
+int 16h
+
+cmp ah, 01h
+jne notmain
+jmp returnmainmenu
+nokeypressed3:
+notmain:
+
+jmp checkingreturn
+pop ax
+
 
 
 ret
@@ -1688,10 +1729,15 @@ pop ax
 call output1
 
 cmp timer, 0
-jg TimerNotEnd
+jle gotoulbFun
+cmp lives, 0
+jg continuePlaying
+
+gotoulbFun:
+call updateLeaderBoard
 mov ah, 4ch
 int 21h
-TimerNotEnd:
+continuePlaying:
 .endif
 
 
@@ -2284,6 +2330,639 @@ pop cx
 pop ax
 ret
 checkCollision endp
+
+
+;seek to end of file, preserves no registers 
+; returns ususal answer in ax
+seekEOF PROC uses bx cx dx
+    mov al, 2
+    mov bx, scoreHandler
+    xor cx, cx
+    xor dx, dx
+    mov ah, 42h
+    int 21h ; seek...
+    ret
+seekEOF ENDP
+
+;Traverse a file backwards until 2nd '$' or first 0 is met
+;Requires file to be opened for read before call
+;Requires strings to be terminated by '$'
+;Returns offset of first element of last string in file
+;limit might be 2^16
+;Return 0 in ax if error occurs while reading (not while seeking)
+fileBackTraversal PROC
+    push bp
+    mov bp, sp
+
+    pusha
+    mov chTraversal, 0
+    mov chTraversalcount, 0
+
+    mov al, [bp + 4] ; seek of EOF
+    mov bx, scoreHandler
+    mov cx, -1
+    mov dx, -2 ;traverse through '$' and one character before it
+    mov ah, 42h
+    int 21h ; seek...
+    
+    cmp ax, 0
+    je fbtError ;if there is no character in file seek will return 0 in ax
+    inc chTraversalcount
+    ;add chTraversalcount, 2
+    ; if there is a string then it is terminated by '$', Ignore that '$'
+    
+    
+    ; mov bx, scoreHandler
+    ; mov dx, offset chTraversal
+    ; mov cx, 1
+    ; mov ah, 3fh
+    ; int 21h ; read from file...
+    ; jc fbtError    
+    ; inc chTraversalcount
+
+
+    fBTloop1:
+
+        mov bx, scoreHandler
+        mov dx, offset chTraversal
+        mov cx, 1
+        mov ah, 3fh
+        int 21h ; read from file...
+        jc fbtError
+        cmp ax, 0
+        je endTreversal
+        cmp chTraversal, '$'
+        je endTreversal
+        inc chTraversalcount    
+        
+
+            ; move pointer backwards two place (one place cuz of read int and another place to actually traverse backwards )
+            mov al, 1 ; seek of EOF
+            mov cx, -1
+            mov dx, -2
+            mov ah, 42h
+            int 21h ; seek...
+            cmp ax, 0
+            je head ;if there is no character in file seek will return 0 in ax
+        jmp fBTloop1
+
+    head:
+    popa
+    pop bp
+    inc chTraversalcount    
+
+    ret 2
+
+    fbtError:
+    popa
+    pop bp
+    mov ax, 0
+    ret 2
+    endTreversal:
+    popa
+    pop bp
+    ret 2
+fileBackTraversal ENDP
+
+;write score into file 
+writeScore PROC
+    push bp
+    mov bp, sp
+    push si
+    push ax
+    push bx
+    push cx
+    push dx
+
+    mov ax, score
+    ; parse a 4 digit score from score variable into string format
+    mov dx,0
+    mov cx,4
+    repeat2:
+
+        mov dx,0
+        mov bx,10
+        div bx ; divide ax with bx and store remainder in dx and quotient in ax
+        mov bx,ax
+        add dx,48
+        push dx
+    loop repeat2
+
+    ; move that string to .data to write it in file
+    mov cx,4
+    mov si, [bp + 4]
+    print:
+    pop dx
+    mov [si], dx
+    inc si
+    loop print
+    mov [si], byte ptr '$'
+
+    sub si, 4
+
+    mov ah, 40h   ; writing into the file
+    mov bx, scoreHandler
+    mov dx, si
+    mov cx, 5
+    int 21h
+    ; if error occurs allah hafiz mera putar
+
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    pop si
+    pop bp
+    ret 2
+writeScore ENDP
+
+;description
+oneStringBack PROC
+    ;seek file pointer to the start of last string in file
+    mov al, 1
+    mov bx, scoreHandler
+    mov cx, -1
+    mov dx, chTraversalcount
+    neg dx
+    mov ah, 42h
+    int 21h ; seek...
+    ret
+oneStringBack ENDP
+
+;description
+; recieve a an offset of decimal ascii string containing 4-digits in si
+stringToAscii PROC
+    push bp
+    mov bp, sp
+    push si
+
+    push bx
+    push dx
+
+    mov bx, 1000
+    ; mov si, [bp + 4]
+    xor ax, ax
+    mov al, [si]
+    sub ax, 48
+    mul bx
+    mov bx, ax
+
+    mov dx, 100
+    xor ax, ax
+    mov al, [si + 1]
+    sub ax, 48
+    mul dl
+    add bx, ax
+
+    mov dl, 10
+    xor ax, ax
+    mov al, [si + 2]
+    sub ax, 48
+    mul dl
+    add bx, ax
+
+    xor ax, ax
+    mov al, [si + 3]
+    sub ax, 48
+    add bx, ax
+
+
+    mov ax, bx
+    pop dx
+    pop bx
+
+    pop si
+    pop bp
+    ret
+stringToAscii ENDP
+
+; gets two strings in one 2d array as a member of .data -> string
+; recieves size of both strings 
+; returns 1 in ax if strings are equal
+; returns 0 in ax if strings are not equal
+c2dSfirstArraySize equ [bp + 6]
+c2dSsecondArraySize equ [bp + 4]
+compare2dString PROC
+    push bp
+    mov bp, sp
+    pusha
+    ;ax contains size of second array
+    ;dx contains size of first array
+    mov ax, c2dSsecondArraySize
+    mov dx, c2dSfirstArraySize
+    mov cx, 2
+    cmp ax, dx
+    jne c2dSexit
+
+    mov si, offset playerName ; first array
+    mov di, offset playerName
+    add di, dx ; second array
+
+    dec si
+    dec di
+
+    mov cx, ax
+    firstloop:
+        cmp cx, 1
+        je c2dSexit
+        inc si
+        inc di
+        mov dl, [di]
+        cmp dl, 'Z'
+        jb dxisCapital
+        ;if letter in dx is not capital
+        cmp dl,  [si]
+        loope firstloop
+        inc cx
+       
+        sub dl, 32
+        cmp dl, [si]
+        loope firstloop
+        inc cx
+        jmp c2dSexit
+
+        dxisCapital:
+        cmp dl, [si]
+        loope firstloop
+        inc cx
+        add dl, 32
+        cmp dl, [si]
+        loope firstloop
+        inc cx
+        jmp c2dSexit
+
+
+    c2dSexit:
+    cmp cx, 1
+    jne notequal
+    popa
+    mov ax, 1
+    pop bp
+    ret 4
+    ; jmp outof
+    notequal:
+    popa
+    mov ax, 0
+    pop bp
+    ret 4
+; outof:
+;     popa
+;     pop bp
+;     ret 4
+compare2dString ENDP
+
+;move cursor to eof and then write score as well as name given in string 
+appendatEof PROC
+    call seekEOF
+    jc aaTEOFExit
+    push si
+    call writeScore
+    mov ah, 40h   ; writing into the file
+    mov bx, scoreHandler
+    mov dx, offset playerName
+    mov cx, userSize
+    int 21h
+
+aaTEOFExit:
+    ret
+appendatEof ENDP
+
+;update leaderboard
+;recieve size of first array in string using username size for this purpose
+;recieves 1 in fileopened to skip the file opening process (for resume function)
+updateLeaderBoard PROC
+    pusha
+    cmp fileopened, 1
+    je uBLfileExists
+
+    xor cx, cx
+    xor bx, bx
+    
+    mov ah, 3dh     ; open an existig file
+    mov al, 02h
+    mov dx, offset file_name
+    int 21h
+    jc uLBfileDoesNotExists
+    mov scoreHandler, ax
+    mov fileopened, 1
+    ; call seekEOF 
+    ; jc uBLmiddlepoint
+
+    jmp uBLfileExists
+
+    ;if file doesn't exist create it
+    ;to create a new file.
+    uLBfileDoesNotExists:
+    mov ah, 3ch
+    mov dx, offset file_name
+    mov cl, 2                 ; read and write only
+    int 21h
+    jc uBLmiddlepoint
+    mov scoreHandler, ax
+    mov fileopened, 1
+
+    jmp uBLfileExists
+    uBLmiddlepoint:
+    jmp uBLerror
+
+
+    uBLfileExists:
+    call seekEOF
+    ; there will always be a name in string ; whether a used one from resume or new game 
+    mov si, offset playername
+    add si, userSize ; the size of that playername is stored in userSize variable
+
+    ; if new file is created just write the score at the end
+    mov ax, 2
+    push ax
+    call fileBackTraversal
+    cmp ax, 0 
+    je writeAtEnd
+
+    ;else start reading
+    mov ax, 2 ; ax = 2 pushed in fileBackTraversal which means end of file, ax = 1 means current position of file
+    uBLreadwholefile:
+    push ax
+    call fileBackTraversal
+    cmp ax, 0
+    je uBLclosefile ; if error occurs jump to closefile
+
+    ;read last string in file
+    mov bx, scoreHandler
+    mov dx, si
+    mov cx, chTraversalcount
+    mov ah, 3fh
+    int 21h ; read from file...
+    jc uBLerror
+
+    cmp ubltemp, 1
+    jne nameNotfound 
+
+    ; if name is found that means current iteration has score associated with that name
+
+    ;seek file pointer to the start of last string in file | last string in file corresponds to the current string in si
+    call oneStringBack
+    jc uBLerror
+    ; cmp ax, 0
+    ; je uBLclosefile
+
+    call stringToAscii
+    cmp ax, score ; old score compared with new score
+    ja tempjump   ; if old score is greater no need to update it
+    ; else write it in file
+    mov dl, 'y'
+    mov ah, 2
+    int 21h
+
+    push si
+    call writeScore
+    call seekEOF
+
+tempjump:
+    
+    call displayLeaderBoard 
+    mov ubltemp, 0
+    jmp uBLclosefile
+
+    nameNotfound:
+
+    ; check two strings to see if they are equal
+    push userSize
+    push chTraversalcount
+    call compare2dString
+    cmp ax, 0
+    je uBLnotequal
+    mov ubltemp, 1 ;flag the next iteration
+
+    ; mov dl, '='
+    ; mov ah, 2
+    ; int 21h    
+
+    uBLnotequal:
+    
+
+    ;seek file pointer to the start of last string in file
+    call oneStringBack
+    jc uBLerror
+    cmp ax, 0
+    je writeAtEnd
+
+    mov ax, 1
+    jmp uBLreadwholefile
+writeAtEnd:
+    call appendatEof
+    call displayLeaderBoard 
+
+    ;Closing the file
+    uBLclosefile:
+    mov ah, 3eh
+    mov bx, scoreHandler
+    int 21h
+    popa
+    ret 
+
+
+    uBLerror:
+    mov dx, 'e'
+    mov ah, 2
+    int 21h
+    popa
+    ret 
+updateLeaderBoard ENDP 
+
+; diplay new line
+newLine PROC
+    push ax
+    push dx
+
+    mov dl, 10
+    mov ah, 2
+    int 21h
+
+    mov dl, 13
+    mov ah, 2
+    int 21h
+    
+    pop dx
+    pop ax
+    ret 
+newLine ENDP
+
+; print a 2d string array based on $ and size
+; recieves address of 2d and size in stack
+; removes parameters from stack
+; requires each array to end with $
+x_offset equ [bp + 4]
+y_size equ [bp + 6]
+printer PROC
+    push bp
+    mov bp, sp
+    push si
+    push cx
+    push ax
+    push dx
+    mov si, x_offset
+    mov cx, y_size
+
+    nextString:
+        mov dl, [si]
+        inc si
+        cmp dl, '$'
+        je AStringEnded ; first value can be '$' so cmp at start
+        mov ah, 2
+        int 21h
+        jmp nextString
+        AStringEnded:
+        call newLine
+        loop nextString
+
+    pop dx
+    pop ax
+    pop cx
+    pop si
+    pop bp
+    ret 4
+printer ENDP
+
+;display leader board 
+;recieves 1 in stack to skip the file opening process (for resume function)
+displayLeaderBoard PROC
+    pusha
+    
+    
+    cmp fileopened, 1
+    je fileExists
+
+    mov ah, 3dh     ; open an existig file
+    mov al, 02h
+    mov dx, offset file_name
+    int 21h
+    jc fileDoesNotExists
+    mov scoreHandler, ax
+    mov fileopened, 1
+
+
+    call seekEOF
+    jc middlepointforerror
+
+    jmp fileExists
+
+    ;if file doesn't exist create it
+    ;to create a new file.
+    fileDoesNotExists:
+    mov ah, 3ch
+    mov dx, offset file_name
+    mov cl, 2                 ; read and write only
+    int 21h
+    jc middlepointforerror
+    mov scoreHandler, ax
+    mov fileopened, 1
+
+    jmp fileExists
+    middlepointforerror:
+    jmp error
+
+
+    fileExists:
+    call seekEOF
+    ; get the address of the start of last string in file 
+
+    call clearscreen
+   
+    mov dLBcursorR, 1
+    mov dLBcursorC, 30
+
+    mov ah,02h
+    mov bh,0
+    mov dh, dLBcursorR
+    mov dl, dLBcursorC
+    int 10h
+
+    mov dx, offset mainMenu2
+    mov ah, 9
+    int 21h
+    mov dLBcursorR, 2
+
+    mov ax, 2
+    readwholefile:
+
+    push ax
+    call fileBackTraversal
+    cmp ax, 0
+    je closefile
+
+    ;read last string in file
+    mov bx, scoreHandler
+    mov dx, offset playername
+    mov cx, chTraversalcount
+    mov ah, 3fh
+    int 21h ; read from file...
+    jc error
+
+    
+
+    .if(isName == 0)
+    add dLBcursorR, 1 ; cursor row position, first row line will be printed at dLBcursorR + 1
+                      ;change every time name is detected
+    mov dLBcursorC, 20 ; cursor col position for name
+    mov isName, 1
+    .else
+    
+    mov dLBcursorC, 40 ; cursor col position for score
+    mov isName, 0
+    .endif
+
+    ; setting cursor
+    mov ah,02h
+    mov bh,0
+    mov dh, dLBcursorR
+    mov dl, dLBcursorC
+    int 10h
+
+    ;display last string in file
+    mov dx, 1
+    push dx
+    mov dx, offset playername
+    push dx   
+    call printer
+
+    
+
+    ;seek file pointer to the start of last string in file
+    mov al, 1
+    mov bx, scoreHandler
+    mov cx, -1
+    mov dx, chTraversalcount
+    neg dx
+    mov ah, 42h
+    int 21h ; seek...
+    jc error
+    cmp ax, 0
+    je closefile
+
+    mov ax, 1
+    jmp readwholefile
+
+
+    ;Closing the file
+    closefile:
+    ; mov ah, 3eh
+    ; mov bx, scoreHandler
+    ; int 21h
+    popa
+    ret 
+
+
+    error:
+    mov dx, 'e'
+    mov ah, 2
+    int 21h
+    popa
+    ret 
+displayLeaderBoard ENDP
+
+
+
 
 ;-------------------------------------------------------------------------------
 ;All the collision between ball and bar is done in procedure 'CheckBarcollision'
