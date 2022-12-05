@@ -1,7 +1,7 @@
 dosseg
 
 .model small
-.stack 100h
+.stack 1024h
 .286
 .data
 
@@ -25,18 +25,22 @@ Bcol dw 0
 align byte
 Bcolour db 5
 ball ends
-
+initialballx equ 350
+initialbally equ 200
 Brickwidth dw 80
-Brickheight dw 40
+Brickheight dw 30
 
-Array_of_Bricks brick <100,1,300,0,1>,<100,1,300,90,2>,<100,1,300,270,5>,<100,1,300,360,5>,<100,1,300,450,5>,<100,1,300,540,5>
-                brick <100,1,100,0,1>,<100,1,100,90,2>,<100,1,100,270,5>,<100,1,100,360,5>,<100,1,100,450,5>,<100,1,100,540,5>
-                brick <100,1,200,0,1>,<100,1,200,90,2>,<100,1,200,270,5>,<100,1,250,340,5>,<100,1,250,440,5>,<100,1,250,540,5> 
-Array_of_Balls ball <5,5,1,150,100,4>
+Array_of_Bricks brick <2,1,60,80,2>,<2,1,60,180,2>,<2,1,60,280,2>,<1,1,60,380,2>,<1,1,60,480,2>
+                brick <1,1,120,80,2>,<1,1,120,180,5>,<1,1,120,280,5>,<1,1,120,380,5>,<1,1,120,480,5>
+                brick <1,1,180,180,2>,<1,1,180,380,5>,<200,1,180,80,1Fh>,<200,1,180,480,1Fh>
+Array_of_Balls ball <4,4,1,initialballx,initialbally,4>
 
+
+currentLevel dw 0
+currentBricks dw 12
 
 BallsCount dw 1
-BricksCount dw 1
+BricksCount dw 12
 
 BrickCol DW  200
 DrawPixCol DW 0
@@ -46,12 +50,14 @@ BrickColor  db 5
 DrawPixColor db 0
 
 
-Ballcol DW  0
-BallRow  dw 0
+Ballcol DW  initialballx
+BallRow  dw initialbally
+BlackBallcol dw 0
+
+BlackBallrow dw 0
 BallColor  db 0
 
 BallSize dw 15
-
 ;===========Collision=================
 currentCol dw 0
 currentRow dw 0
@@ -64,15 +70,14 @@ lowery dw 0
 ;----------------For timer------------------
 second dw 0
 syssecond db 0
-timer dw 30 ; start of timer in seconds
-
-
+timer dw 12121 ; start of timer in seconds
+;------------------------------------------------------
 ;======================Bar=================
 align word
 barwidth dw 100
 barheight dw 15
-barRow dw 400
-barCol dw 20
+barRow dw 430
+barCol dw 300
 align byte
 Barcolor db 1Fh
 bartempcolor db 0
@@ -109,12 +114,16 @@ mainMenu3 db "Instructions$"
 mainMenu4 db "Exit$"
 mainMenu5 db "Resume$"
 
+Pausemsg1 db "Game Paused$"
+Pausemsg2 db "           $"
+
 startgamemsg1 db ">>> Start New Game.$"
 scoreboardmsg1 db ">>> Open the ScoreBoard of all Players.$"
 instructionsmsg1 db ">>> Check out the instructions regarding playing this game.$"
 exitmsg1 db ">>> Exit the Game.$"
 resumemsg1 db ">>> Play as a last Player.$"
-
+losingmsg db "Better Luck Next Time ! Meri jaan Game seekh kr ao$"
+winningmsg db "Being too Happy isn't better for your health.Whatever,Nice Work$"
 ;----------Mouse control-----------
 xcoor dw 0
 ycoor dw 0
@@ -148,6 +157,8 @@ ubltemp dw 0
 userSize dw 0 ;Size of username
 playerName db 0 ;this variable must be at last
 ;------------------------------------------------------
+
+
 .code
 ;-----------------------------------------------------
 ; Main Driver Function
@@ -159,7 +170,7 @@ mov ds, ax
 
 call welcomePage
 call mainMenuprint
-call levelOnepage
+call startinglevels
 
 
 mov ah,4ch
@@ -418,6 +429,11 @@ mainMenuprint proc uses ax dx bx
 
 call clearscreen
 sub colour,2
+cmp colour,0
+jne itsok
+
+inc colour
+itsok:
 call BrickBreakerPrint
 ;Vertical line 1
 mov ah,6
@@ -525,10 +541,32 @@ detectMenuSelect proc uses ax dx cx bx
 
 
 
-add colour,3
+add colour,1
 mov ax, 1  ;displaying mouse
 int 33h
 keepgoing:
+
+
+push ax
+mov ah,01     ;checking if any key pressed
+int 16h
+Jz nokeypressed2
+mov ah,0
+int 16h
+
+cmp ah, 01h
+jne notreturn
+jmp welcomePagemove
+;call welcomePage
+nokeypressed2:
+notreturn:
+pop ax
+
+
+
+
+
+
 
 
 mov ax, 3  
@@ -574,7 +612,7 @@ mov si,offset scoreboardBox
 push si
 call boundCheck ;check if cursor is in right position or not
 cmp ax, 1
-je displayScoreBoard
+je startgameselected
 noleftclick:
 ;-------------------------------------------------------------------------------
 ; Hover Functionality
@@ -1130,7 +1168,6 @@ jne keepgoing
 
 exitselected:
 call ExitPage
-
 startgameselected:
 call startgamepage
 
@@ -1144,18 +1181,19 @@ push ax
 checkingreturn:
 mov ah,01     ;checking if any key pressed
 int 16h
-Jz nokeypressed2
+Jz nokeypressed3
 mov ah,0
 int 16h
 
 cmp ah, 01h
 jne notmain
 jmp returnmainmenu
-nokeypressed2:
+nokeypressed3:
 notmain:
 
 jmp checkingreturn
 pop ax
+
 
 
 ret
@@ -1170,7 +1208,7 @@ ExitPage proc uses ax dx bx cx
 call clearscreen
 ;Changing Page Numebr to 2
 mov ah,05h 
-mov al,1
+mov al,2
 int 10h
 
 ;Setting Video mode in new page
@@ -1219,6 +1257,7 @@ ExitPage endp
 
 startgamepage proc uses ax dx cx bx
 
+mov lives,3
 call clearscreen
 mov al,1
 add colour,al
@@ -1228,6 +1267,23 @@ add colour,al
 mov ah,05h 
 mov al,2
 int 10h
+
+
+
+mov di,offset Array_of_Bricks
+mov cx,BricksCount
+
+enteringValues:
+
+
+mov [di].BRstrength,1
+mov [di].BRcolour,3
+
+
+
+add di,sizeof brick
+loop enteringValues
+
 
 ;Setting Video mode in new page
 mov ah,0
@@ -1256,28 +1312,28 @@ mov ah,2
 mov dh,22
 mov dl,41
 int 10h
-
-push ax ;storing value of ax cuz it will be changed in takeusername
-mov ax, offset playerName
-push ax
 call takeuserName
-mov userSize, ax
 
 
-pop ax ;retrieving value back
-call levelOnepage
+call startinglevels
 
 ret
 startgamepage endp
 
 
 
-levelOnepage proc uses ax dx bx cx di
+startinglevels proc uses ax dx bx cx di
 
+mov BricksCount,12
+mov ax,BricksCount
+mov currentBricks,ax
+
+mov di,offset Array_of_Balls
+
+neg [di].Brvelocity
 
 mov ax,0  ;Removing mouse [pointer]
 int 33h
-
 
 
 call clearscreen
@@ -1285,14 +1341,51 @@ call clearscreen
 
 ;-----------------------------Upper Bar---------------------------
 
-mov colour,10011010b
+mov colour,00101001b
 mov ah,6
 mov al,0
 mov BH,colour
 mov ch,1  
-mov cl,0  ;right
+mov cl,0  ;left
 mov dh,1  ;down
-mov dl,80  ;left
+mov dl,80  ;right
+int 10h
+
+;-----------------------left Bar--------------------------------------
+
+mov colour,00101001b
+mov ah,6
+mov al,0
+mov BH,colour
+mov ch,1  ;up
+mov cl,0  ;left
+mov dh,23  ;down
+mov dl,1  ;right
+int 10h
+
+;----------------Right Bar--------------------------
+mov colour,00101001b
+
+mov ah,6
+mov al,0
+mov BH,colour
+mov ch,1 ;up
+mov cl,78  ;left
+mov dh,23  ;down
+mov dl,79 ;right
+int 10h
+
+;---------------Bottom Bar----------------------
+
+mov colour,00101001b
+
+mov ah,6
+mov al,0
+mov BH,colour
+mov ch,29 ;up
+mov cl,0  ;left
+mov dh,30  ;down
+mov dl,79 ;right
 int 10h
 
 ;setting the position of the cursor
@@ -1334,17 +1427,102 @@ mov dx,offset levelOnemsg4
 mov ah,9
 int 21h
 
+nextlevel:
+mov ax,currentLevel
+cmp ax,3
+jne notend
+call WinningPage
+notend:
+inc currentLevel
+
+mov ax,currentLevel
+
+.if(ax==2)
+
+mov di,offset Array_of_Bricks
+mov cx,BricksCount
+
+keepResetting:
+
+mov [di].BRstrength,2
+mov [di].BRcolour,3
+
+add di,sizeof brick
+loop keepResetting
+
+add BricksCount,2
+mov ax,BricksCount
+mov currentBricks,ax
+
+mov di,offset Array_of_Balls
+mov ax,[di].Bcvelocity
+cmp ax,0
+jnl canletgo3
+neg [di].Bcvelocity
+canletgo3:
+add [di].Bcvelocity,1
 
 
+mov ax,[di].Brvelocity
+cmp ax,0
+jnl canletgo2
+neg [di].Brvelocity
+canletgo2:
+add [di].Brvelocity,1
 
+neg [di].Brvelocity
+mov [di].Brow,375
+mov [di].Bcol,300
+add barvelocity,5
+.endif
+
+.if(ax==3)
+
+mov di,offset Array_of_Bricks
+mov cx,BricksCount
+
+sub cx,2
+
+keepResetting1:
+
+mov [di].BRstrength,3
+mov [di].BRcolour,7
+
+add di,sizeof brick
+loop keepResetting1
+
+
+mov ax,BricksCount
+mov currentBricks,ax
+mov di,offset Array_of_Balls
+mov ax,[di].Bcvelocity
+cmp ax,0
+jnl canletgo
+neg [di].Bcvelocity
+canletgo:
+add [di].Bcvelocity,1
+
+
+mov ax,[di].Brvelocity
+cmp ax,0
+jnl canletgo1
+neg [di].Brvelocity
+canletgo1:
+add [di].Brvelocity,1
+
+neg [di].Brvelocity
+
+mov [di].Brow,375
+mov [di].Bcol,300
+add barvelocity,5
+.endif
 
 
 
 mov di,offset Array_of_Bricks
 mov cx,BricksCount
 
-push [di].Brow ; to make previous ball black
-push [di].Bcol
+
 
 keepDrawing:
 mov ax, [di].BRrow
@@ -1373,6 +1551,13 @@ int 16h
 Jz nokeypressed
 mov ah,0
 int 16h
+
+ cmp ah, 01h
+jne notPause
+
+call pausefunction
+notPause:
+
 
 cmp ah,04dh
 jne notright     ;checking if right key is pressed
@@ -1485,6 +1670,8 @@ pop cx
 mov di,offset Array_of_Balls
 mov cx,BallsCount
 
+push BallRow ; to make previous ball black
+push Ballcol
 keepDrawing1:
 ; mov ax, [di].Brow
 ; mov BallRow,ax
@@ -1564,6 +1751,11 @@ continuePlaying:
          INT 15H
        pop cx
 
+
+; mov ax, [di].Brow
+; mov BallRow,ax
+; mov ax,[di].Bcol
+; mov Ballcol,ax
 call DrawBlackBall
 
 
@@ -1578,13 +1770,26 @@ mov BallColor,al
 
 call DrawBall
 
+;-----------------------left Bar--------------------------------------
+pusha
+mov colour,00101001b
+mov ah,6
+mov al,0
+mov BH,colour
+mov ch,2  ;up
+mov cl,0  ;left
+mov dh,23  ;down
+mov dl,1  ;right
+int 10h
+popa
+;--------------------------------------------------------------------
 
 mov ax,[di].Brvelocity
 add [di].Brow,ax
 
 
 mov ax,[di].Brow
-cmp ax,455
+cmp ax,443
 
 jbe nocollision2
 
@@ -1597,6 +1802,44 @@ mov [di].Brow,ax
 mov ax,barcol
 add ax,10
 mov [di].Bcol,ax
+
+;-------------erasing lives-----------
+pusha
+mov ah,02h
+mov bh,0
+mov dh,0
+mov dl,67
+int 10h
+mov dx,offset levelOnemsg2
+mov ah,9
+int 21h
+
+
+
+mov ah,09h
+mov al,' '
+mov bh,0
+mov bl,04H
+mov cx,lives
+int 10h
+
+;------------Printing new lives--------------
+dec lives
+
+mov ax,lives
+cmp ax,0
+jg notneedofexit
+call losingpage
+
+notneedofexit:
+mov ah,09h
+mov al,03h
+mov bh,0
+mov bl,04H
+mov cx,lives
+int 10h
+popa
+
 nocollision2:
 cmp ax,38
 
@@ -1610,13 +1853,13 @@ add [di].Bcol,ax
 
 
 mov ax,[di].Bcol
-cmp ax,620
+cmp ax,602
 jbe nocollision1
 neg [di].Bcvelocity
 
 nocollision1:
 
-cmp ax,8
+cmp ax,24
 ja nocoll1
 neg [di].Bcvelocity
 
@@ -1629,27 +1872,6 @@ mov currentRow,ax
 
 
 mov si,di
-
-
-; mov ah,02h
-; mov bh,0
-; mov dh,10
-; mov dl,20
-; int 10h
-
-; mov ax, currentRow
-; call output1
-
-; mov ah,02h
-; mov bh,0
-; mov dh,15
-; mov dl,20
-; int 10h
-
-; mov ax, currentCol
-; call output1
-
-
 call checkCollision
 
 cmp collided,1
@@ -1659,6 +1881,45 @@ add [di].Brow,ax
 mov ax,[di].Bcvelocity
 add [di].Bcol,ax
 notcollided:
+
+
+;------------if level completed--------------------------------------
+
+mov ax,currentLevel
+
+.if(ax>1)
+mov ax,currentBricks
+cmp ax,2
+jle nextlevel
+.endif
+
+pusha
+mov ax,currentBricks
+cmp ax,0
+jg notcompleted
+
+
+jmp nextlevel
+notcompleted:
+
+
+
+popa
+
+;------------------------------------------------------------
+
+
+pusha
+call checkBarcollision
+popa
+cmp collided,1
+jne notcollided1
+mov ax,[di].Brvelocity
+add [di].Brow,ax
+mov ax,[di].Bcvelocity
+add [di].Bcol,ax
+notcollided1:
+
 
 add di,sizeof ball
 
@@ -1670,31 +1931,143 @@ jmp outerKeepDrawing
 
 mov ah,4ch 
 int 21h
-levelOnepage endp
+startinglevels endp
 
+
+WinningPage proc
+call clearscreen
+;Changing Page Numebr to 2
+mov ah,05h 
+mov al,2
+int 10h
+
+;Setting Video mode in new page
+mov ah,0
+mov al,12h
+int 10h
+
+;Setting the backgorund of the screen to black
+mov ah,6
+mov al,0
+mov cx,0
+mov dh,80
+mov dl,80
+mov bh,00
+int 10h
+
+;setting the position of the cursor
+mov ah,2
+mov dh,14
+mov dl,15
+int 10h
+
+;Printing the message
+mov dx,offset winningmsg
+mov ah,9
+int 21h
+
+;Resetting Curson Position
+mov ah,2
+mov dh,0
+mov dl,0
+int 10h
+
+mov ax, 0  ;Removing mouse [pointer]
+int 33h
+
+push ax
+notreturn5:
+nokeypressed5:
+mov ah,01     ;checking if any key pressed
+int 16h
+Jz nokeypressed5
+mov ah,0
+int 16h
+
+cmp ah, 01h
+jne notreturn5
+call mainMenuprint
+;call welcomePage
+
+
+pop ax
+ret
+WinningPage endp
+
+;Page displays when player loses the game
+losingpage proc
+call clearscreen
+;Changing Page Numebr to 2
+mov ah,05h 
+mov al,2
+int 10h
+
+;Setting Video mode in new page
+mov ah,0
+mov al,12h
+int 10h
+
+;Setting the backgorund of the screen to black
+mov ah,6
+mov al,0
+mov cx,0
+mov dh,80
+mov dl,80
+mov bh,00
+int 10h
+
+;setting the position of the cursor
+mov ah,2
+mov dh,14
+mov dl,15
+int 10h
+
+;Printing the message
+mov dx,offset losingmsg
+mov ah,9
+int 21h
+
+;Resetting Curson Position
+mov ah,2
+mov dh,0
+mov dl,0
+int 10h
+
+mov ax, 0  ;Removing mouse [pointer]
+int 33h
+
+push ax
+notreturn4:
+nokeypressed4:
+mov ah,01     ;checking if any key pressed
+int 16h
+Jz nokeypressed4
+mov ah,0
+int 16h
+
+cmp ah, 01h
+jne notreturn4
+call mainMenuprint
+;call welcomePage
+
+
+pop ax
+ret
+losingpage endp
+
+;-------------------------------------------------------------------------------
+;All the collision between ball and bricks is done in procedure 'CheckCollision'
+;--------------------------------------------------------------------------------
 checkCollision proc
+
 
 
 push ax
 push cx
 push di
 mov di,offset Array_of_Bricks
+
 mov cx,BricksCount
-
-; push ax
-; push bx
-; ; check status of button pressed
-; mov ax, 5
-; mov bx, 0
-; int 33h
-
-; cmp ax, 1
-; jne noclick
-
-; call pausefunction
-; noclick:
-; pop bx
-; pop ax
 
 checking1:
 
@@ -1731,25 +2104,22 @@ nocollision:
 add di,sizeof brick
 loop checking1
 
-call checkBarcollision
 
 
 mov collided,0
 pop di
 pop cx
 pop ax
+
 ret
 collisionOccured:
-
+call beep
 
 .if([di].BRbonus == 1)
 add Score, 5
 .else
 inc Score
 .endif
-
-
-
 
 
 
@@ -1799,21 +2169,10 @@ mov ax,currentRow
 cmp ax,lowery
 jg notleft1
 
-pusha
-mov ah,02h
-mov bh,0
-mov dh,5
-mov dl,32
-int 10h
-
-mov dl, 'L'
-mov ah, 2 
-int 21h
-popa
 
 
 neg [si].Bcvelocity
-jmp donecollision
+jmp donecollision1
 notleft1:
 
 
@@ -1850,21 +2209,10 @@ mov ax,currentRow
 cmp ax,lowery
 jg notright1
 
-pusha
-mov ah,02h
-mov bh,0
-mov dh,5
-mov dl,32
-int 10h
-
-mov dl, 'R'
-mov ah, 2 
-int 21h
-popa
 
 
 neg [si].Bcvelocity
-jmp donecollision
+jmp donecollision1
 
 notright1:
 
@@ -1900,21 +2248,10 @@ cmp lowery,ax
 
 jg notup
 
-pusha
-mov ah,02h
-mov bh,0
-mov dh,5
-mov dl,32
-int 10h
-
-mov dl, 'U'
-mov ah, 2 
-int 21h
-popa
 
 
 neg [si].Brvelocity
-jmp donecollision
+jmp donecollision1
 notup:
 
 mov dx,[si].Brvelocity
@@ -1946,49 +2283,54 @@ mov ax,currentRow
 cmp ax,lowerx
 jl notdown
 
-pusha
-mov ah,02h
-mov bh,0
-mov dh,5
-mov dl,32
-int 10h
-
-mov dl, 'D'
-mov ah, 2 
-int 21h
-popa
-
-
 neg [si].Brvelocity
-jmp donecollision
+jmp donecollision1
 
 notdown:
 neg [si].Brvelocity
 neg [si].Bcvelocity
 
-donecollision:
+donecollision1:
 
 
 dec [di].BRstrength
+
 mov ax,[di].BRstrength
-.if (ax<1)
+
+.if(ax<1)
+dec currentBricks
+.endif
+mov ax,currentLevel
+
+.if (ax>1)
+mov ax,[di].BRstrength
+cmp ax,3
+jl nocolourchange
+mov BrickColor,1Fh
+jmp nopermanentchange
+.endif
+nocolourchange:
+mov al,byte ptr [di].BRstrength
+mov BrickColor,al
+nopermanentchange:
+
 mov ax, [di].BRrow
 mov BrickRow,ax
 mov ax,[di].BRcol
 mov BrickCol,ax
 
-mov BrickColor,0
-
 call DrawBrick
+
 jmp brickbroken
-.endif
-inc[di].BRcolour
+
+
 brickbroken:
 pop di
 pop cx
 pop ax
 ret
 checkCollision endp
+
 
 ;seek to end of file, preserves no registers 
 ; returns ususal answer in ax
@@ -2620,6 +2962,11 @@ displayLeaderBoard PROC
 displayLeaderBoard ENDP
 
 
+
+
+;-------------------------------------------------------------------------------
+;All the collision between ball and bar is done in procedure 'CheckBarcollision'
+;--------------------------------------------------------------------------------
 checkBarcollision PROC
 
 push ax
@@ -2649,7 +2996,7 @@ add ax,currentRow
 cmp ax,barRow
 jl nocollision4
 
-jmp collisionOccured1
+jmp collisionOccured41
 
 
 nocollision4:
@@ -2660,7 +3007,7 @@ pop di
 pop cx
 pop ax
 ret
-collisionOccured1:
+collisionOccured41:
 
 
 mov collided,1
@@ -2699,26 +3046,15 @@ mov ax,currentRow
 cmp ax,lowery
 jg notleft2
 
-pusha
-mov ah,02h
-mov bh,0
-mov dh,5
-mov dl,32
-int 10h
 
-mov dl, 'L'
-mov ah, 2 
-int 21h
-popa
 
 
 neg [si].Bcvelocity
-jmp donecollision
+jmp donecollision2
 notleft2:
 
 
 mov ax,[si].Bcvelocity
-
 cmp ax,0
 jg notright2
 
@@ -2741,7 +3077,7 @@ mov lowery,ax
 mov ax,currentRow
 add ax,ballsize
 cmp ax,lowery
-jl notright1
+jl notright2
 mov ax,barRow
 add ax,barheight
 sub ax,dx
@@ -2752,7 +3088,7 @@ jg notright2
 
 
 neg [si].Bcvelocity
-jmp donecollision
+jmp donecollision2
 
 notright2:
 
@@ -2788,13 +3124,15 @@ cmp lowery,ax
 
 jg notup2
 
-
+;-------------------physics for left half of the bar-----------------------------------
+mov dx,0
 mov ax,barwidth
  mov bx,3
-;  div bx
+ div bx
 mov bx,barcol
 
-add bx,15
+add bx,ax
+sub bx,9
 mov dx,currentCol
 sub dx,ballsize
 cmp dx,bx
@@ -2804,8 +3142,27 @@ cmp ax,0
 jl notlefthalf
 neg [si].Bcvelocity
 notlefthalf:
+;-------------------physics for right half of the bar-----------------------------------
+mov dx,0
+mov ax,barwidth
+ mov bx,3
+ div bx
+ mov dx,barcol
+add dx,barwidth
+sub dx,ax
+mov lowerx,dx
+mov ax,currentCol
+cmp ax,lowerx
+jl notrighthalf
+mov ax,[si].bcvelocity
+cmp ax,0
+jg notrighthalf
+
+neg [si].Bcvelocity
+notrighthalf:
+
 neg [si].Brvelocity
-jmp donecollision
+jmp donecollision2
 notup2:
 
 mov dx,[si].Brvelocity
@@ -2840,13 +3197,13 @@ jl notdown2
 
 
 neg [si].Brvelocity
-jmp donecollision1
+jmp donecollision2
 
 notdown2:
 neg [si].Brvelocity
 neg [si].Bcvelocity
 
-donecollision1:
+donecollision2:
 
 
 pop di
@@ -2858,20 +3215,39 @@ checkBarcollision ENDP
 
 
 
-pausefunction proc uses ax bx
+pausefunction proc uses ax bx dx
+
+;setting the position of the cursor
+mov ah,02h
+mov bh,0
+mov dh,1
+mov dl,34
+int 10h
+
+mov dx,offset Pausemsg1
+mov ah,9
+int 21h
+
 
 letsgo:
-mov ax, 3  
-int 33h
 
 
-; check status of button pressed
-mov ax, 5
-mov bx, 0
-int 33h
+mov ah,0
+int 16h
 
-cmp ax, 1
+cmp ah, 01h
+
 jne letsgo
+mov colour,00101001b
+mov ah,6
+mov al,0
+mov BH,colour
+mov ch,1  
+mov cl,0  ;left
+mov dh,1  ;down
+mov dl,80  ;right
+int 10h
+
 
 ret
 pausefunction endp
@@ -2905,6 +3281,7 @@ displayheart endp
 ; calls procedurs like 'BrickBreakerPrint'
 ;------------------------------------------------------------------
 welcomePage proc
+welcomePagemove::
 push ax
 push bx
 push cx
@@ -2996,22 +3373,29 @@ int 10h
 ;-----------------------------------------------------------------------
 ; Code to detect the mouse click
 ;-----------------------------------------------------------------------
-keepgoing1:
 mov ax, 1  ;displaying mouse
 int 33h
+keepgoing1:
 
-; mov ax, 3  
-;     ; AX = 03
-; 	; on return:
-; 	; CX = horizontal (X) position  (0..639)
-; 	; DX = vertical (Y) position  (0..199)
-; 	; BX = button status:
-; int 33h
 
-; mov xcoor, cx ;storing values in variable
-; mov ycoor, dx ;storing values in variable
 
-; check status of button pressed
+push ax
+mov ah,01     ;checking if any key pressed
+int 16h
+Jz nokeypressed1
+mov ah,0
+int 16h
+
+cmp ah, 01h
+jne notexit
+call ExitPage
+nokeypressed1:
+notexit:
+pop ax
+
+
+
+
 mov ax, 5
 mov bx, 0
 int 33h
@@ -3030,6 +3414,8 @@ cmp ax, 1
 je exit
 
 noleftclick1:
+
+
 
 mov ax, 5
 mov bx, 0
@@ -3079,35 +3465,20 @@ output1 endp
 ;------------------------------------------------------------
 ; Procedure 'TakeuserName' Takes Player Name from the user
 ;------------------------------------------------------------
-; ask user for input until enter has pressed
-; gets offset of destination string in stack 
-; returns size in ax
-; removes the input recieved from stack
-takeuserName proc
-    push bp
-    mov bp, sp
-    push si
-    push cx
-    mov cx, 0
-    mov si, [bp + 4]
-    
-
-    askagain:
-        mov ah, 1
-        int 21h
-        mov [si], al 
-        inc si
-        inc cx
-        cmp al, 13
-        jne askagain
-
-    dec si
-    mov [si], byte ptr '$'
-    mov ax, cx
-    pop cx
-    pop si
-    pop bp
-    ret 2
+takeuserName proc uses ax dx bx
+mov si,offset playerName
+repeat1:
+mov ah,1
+int 21h
+cmp al,13
+je done
+mov [si],al
+add si,1
+jmp repeat1
+done:
+mov al,'$'
+mov [si],al
+ret
 takeuserName endp
 
 ;----------------------------------------------------------------------------
@@ -3652,6 +4023,42 @@ int 10h
 ret
 BrickBreakerPrint endp
 
+beep proc
+        push ax
+        push bx
+        push cx
+        push dx
+        mov     al, 182         ; Prepare the speaker for the
+        out     43h, al         ;  note.
+        mov     ax, 400        ; Frequency number (in decimal)
+                                ;  for middle C.
+        out     42h, al         ; Output low byte.
+        mov     al, ah          ; Output high byte.
+        out     42h, al 
+        in      al, 61h         ; Turn on note (get value from
+                                ;  port 61h).
+        or      al, 10000111b   ; Set bits 1 and 0.
+        out     61h, al         ; Send new value.
+        mov     bx, 1          ; Pause for duration of note.
+.pause1:
+        mov     cx, 65535
+.pause2:
+        dec     cx
+        jne     .pause2
+        dec     bx
+        jne     .pause1
+        in      al, 61h         ; Turn off note (get value from
+                                ;  port 61h).
+        and     al, 11110100b   ; Reset bits 1 and 0.
+        out     61h, al         ; Send new value.
+
+        pop dx
+        pop cx
+        pop bx
+        pop ax
+
+ret
+beep endp
 
 end main
 
